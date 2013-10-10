@@ -26,41 +26,54 @@ def liveDescriptors():
     cv2.destroyWindow('img')
 
 def compare_images():
-    img1 = cv2.imread('object.jpg', cv.CV_LOAD_IMAGE_GRAYSCALE)
-    img2 = cv2.imread('test.jpg', cv.CV_LOAD_IMAGE_GRAYSCALE)
+    imag1 = cv2.imread('object.jpg')
+    imag2 = cv2.imread('test.jpg')
 
+    img1 = cv2.cvtColor(imag1, cv.CV_BGR2GRAY)
+    img2 = cv2.cvtColor(imag2, cv.CV_BGR2GRAY)
+
+    img1 = cv2.resize(img1, (0,0), fx=0.25, fy=0.25)
     img2 = cv2.resize(img2, (0,0), fx=0.25, fy=0.25)
 
     keypoints1, descriptors1, knn = initialize(img1)
-    print "keypoints for first image: ", len(keypoints1)
-    
     keypoints2, descriptors2 = calculateDescriptors(img2)
+
+    print "keypoints for first image: ", len(keypoints1)
     print "keypoints for second image: ", len(keypoints2)
 
+    good_matches = []   # list of tuples --> (keypoint1, keypoint2)
     for index, descriptor in enumerate(descriptors2):
-        # make it a matrix
+        # turn the descriptor into a 1xn matrix
         descriptor = np.array(descriptor, np.float32).reshape(1, len(descriptor))
-        retval, results, neigh_resp, dists = knn.find_nearest(descriptor, 10)
+        retval, results, neigh_resp, dists = knn.find_nearest(descriptor, 2)
 
-        for desc, dist in zip(results[0], dists[0]):
-            desc = int(desc)
+        # i.e. the keypoint1 this descriptor is most similar to
+        classification = int(results[0][0])
 
-            maxdist = 0.1
-            if dist < maxdist:
-                c = dist * 255 / maxdist
-                (x, y), r = keypoints1[desc].pt, int(keypoints1[desc].size)
-                cv2.circle(img1, (int(x), int(y)), r, (c, c, c))
+        if dists[0][0] <= 0.50 * dists[0][1]:
+            good_matches.append((classification, index))
 
-                c = dist * 255 / maxdist
-                (x, y), r = keypoints2[index].pt, int(keypoints2[index].size)
-                cv2.circle(img2, (int(x), int(y)), r, (c, c, c))
+    # output image
+    h1, w1 = img1.shape[:2]
+    h2, w2 = img2.shape[:2]
 
-    cv2.namedWindow('img1')
-    cv2.imshow('img1', img1)
+    vis = np.zeros((max(h1, h2), w1 + w2), np.uint8)
+    vis[:h1, :w1] = img1
+    vis[:h2, w1:w1+w2] = img2
+    vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
 
-    cv2.namedWindow('img2')
-    cv2.imshow('img2', img2)
+    for kp1, kp2 in good_matches:
+        c = (255,255,255)
 
+        (x1, y1), r1 = keypoints1[kp1].pt, int(keypoints1[kp1].size)
+        cv2.circle(vis, (int(x1), int(y1)), 3, c)
+
+        (x2, y2), r2 = keypoints2[kp2].pt, int(keypoints2[kp1].size)
+        cv2.circle(vis, (int(x2+w1), int(y2)), 3, c)
+
+        cv2.line(vis, (int(x1),int(y1)), (int(x2+w1),int(y2)), c)
+
+    cv2.imshow('vis', vis)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -74,9 +87,10 @@ def initialize(image, threshold = None):
         surf = cv2.SURF()
 
     kp, descriptors = surf.detectAndCompute(image, None)
+    classes = np.arange(len(kp), dtype = np.float32)
 
     knn = cv2.KNearest()
-    knn.train(descriptors, np.array([1] * len(descriptors)), isRegression = False)
+    knn.train(descriptors, classes, isRegression = False)
 
     return kp, descriptors, knn
 
